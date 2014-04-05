@@ -35,5 +35,7 @@ executable ConduitEventLogger
     , conduit
     , network-conduit
     , bytestring
+    , attoparsec-conduit
+    , transformers
 
 
