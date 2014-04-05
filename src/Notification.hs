@@ -16,6 +16,8 @@ data EventType =
   | Sql
   | RenderTemplate
   | RenderPartial
+  
+  | ParseError
   | Unknown
   deriving Show
 
@@ -23,40 +25,44 @@ data PayloadType =
     ControllerPayloadType
   | SqlPayloadType
   | RenderPayloadType
+  | ParseErrorPayloadType
   | UnknownPayloadType
 
 data Payload = 
   RenderPayload{
-    _identifier  :: T.Text
+    _identifier :: T.Text
   }
   |
   SqlPayload{
-    _sql         :: T.Text
+    _sql        :: T.Text
   }
   |
   ControllerPayload{
-    _controller  :: T.Text
-  , _action      :: T.Text
-  , _params      :: Object
-  , _format      :: T.Text
-  , _method      :: T.Text
-  , _path        :: T.Text
-  , _status      :: Maybe Int
+    _controller :: T.Text
+  , _action     :: T.Text
+  , _params     :: Object
+  , _format     :: T.Text
+  , _method     :: T.Text
+  , _path       :: T.Text
+  , _status     :: Maybe Int
   } 
+  |
+  ParseErrorPayload{
+    _errorMsg   :: T.Text
+  }
   |
   UnknownPayload
   deriving (Generic, Show)
 
 instance ToJSON Payload
 
-
 data Notification = Notification{
     _sourceType :: T.Text
   , _eventType  :: EventType
   , _payload    :: Payload
-  , _timestamp  :: T.Text
-  , _start      :: Int
-  , _duration   :: Int
+  , _timestamp  :: Maybe T.Text
+  , _start      :: Maybe Int
+  , _duration   :: Maybe Int
   } deriving (Show)
 
 makeLenses ''Payload
@@ -93,6 +99,7 @@ instance FromJSON Notification where
         Sql                     -> SqlPayloadType
         RenderTemplate          -> RenderPayloadType
         RenderPartial           -> RenderPayloadType
+        ParseError              -> ParseErrorPayloadType
         Unknown                 -> UnknownPayloadType
 
       getEventType :: T.Text -> EventType
