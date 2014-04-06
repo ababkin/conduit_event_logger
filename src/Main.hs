@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
@@ -7,60 +9,70 @@ import Data.Conduit
 import Data.Conduit.Network.UDP
 import Data.Aeson
 import Control.Monad.IO.Class
+import Control.Monad.Reader (MonadReader, runReaderT, ReaderT)
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Conduit.Attoparsec as CA
 import qualified Data.Text as T
 
 import Notification
+import Config
+import Store
 
 udpPort           = 5555
 maxUdpFrameBytes  = 8192
 
-main = getUdpMessage $$ extractData =$= parseNotification =$ saveNotification
-  where
-  getUdpMessage = do
-    socket <- liftIO $ bindPort udpPort HostAny
-    sourceSocket socket maxUdpFrameBytes 
+config = Config{
+    dbname = "railoscopy"
+  , user = "ababkin"
+  , password = "izmail"
+  }
 
-  extractData :: Conduit Message IO BS.ByteString
-  extractData = do
-    awaitForever $ \msg ->
-      yield $ msgData msg
-
-  parseNotification :: Conduit BS.ByteString IO Notification
-  parseNotification = do
-    CA.conduitParserEither json =$= awaitForever go
+main = do
+  flip runReaderT config $ do
+    migrate
+    getUdpMessage $$ extractData =$= parseNotification =$ handleNotification
     where
-      go (Left e) = do
-        yield $ parseErrorNotification $ T.pack $ show e
-        {- parseNotification -}
-        
-      go (Right (_, j)) = do
-        {- liftIO $ putStrLn $ "\ngot json chunk of size: " ++ (show $ length $ show j) -}
-        yield $ case fromJSON j :: Result Notification of
-          Success notification  -> notification
-          Error s               -> parseErrorNotification $ T.pack s
+      getUdpMessage = do
+        socket <- liftIO $ bindPort udpPort HostAny
+        sourceSocket socket maxUdpFrameBytes 
 
-      parseErrorNotification s = Notification{
-        _sourceType = "internal"
-      , _eventType  = ParseError
-      , _payload    = ParseErrorPayload s
-      , _timestamp  = Nothing
-      , _start      = Nothing
-      , _duration   = Nothing
-      }
+      extractData :: MonadReader Config m => Conduit Message m BS.ByteString
+      extractData = do
+        awaitForever $ \msg ->
+          yield $ msgData msg
 
-  saveNotification = do
-    liftIO $ putStrLn $ "sink: waiting for notifications..."
-    maybeNotification <- await
-    case maybeNotification of
-      Nothing -> liftIO $ putStrLn "sink: Nothing from upstream, exiting"
-      Just notification -> do
-        liftIO $ putStr $ show notification
-        saveNotification
-            
-  
+      parseNotification :: MonadReader Config m => Conduit BS.ByteString m Notification
+      parseNotification = do
+        CA.conduitParserEither json =$= unwrap
+        where
+          unwrap = awaitForever $ \case
+            (Left e) -> do
+              yield $ parseErrorNotification $ T.pack $ show e
+              {- parseNotification -}
+              
+            (Right (_, j)) -> do
+              {- liftIO $ putStrLn $ "\ngot json chunk of size: " ++ (show $ length $ show j) -}
+              yield $ case fromJSON j :: Result Notification of
+                Success notification  -> notification
+                Error s               -> parseErrorNotification $ T.pack s
+
+          parseErrorNotification s = Notification{
+            _sourceType = "internal"
+          , _eventType  = ParseError
+          , _payload    = ParseErrorPayload s
+          , _timestamp  = Nothing
+          , _start      = Nothing
+          , _duration   = Nothing
+          }
+
+      {- handleNotification :: (MonadReader Config m, MonadIO m) => Sink Notification m () -}
+      handleNotification :: Sink Notification (ReaderT Config IO) ()
+      handleNotification = do
+        awaitForever $ \notification -> do
+          {- liftIO $ putStr $ show notification -}
+          lift $ saveNotification notification
+
 
 
 
