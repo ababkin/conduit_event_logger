@@ -10,23 +10,34 @@
 module Store where
 
 import Control.Monad.IO.Class (liftIO)
-import Database.Persist
-import Database.Persist.Postgresql
+import Control.Monad.Trans (lift)
+import Database.Persist hiding (get)
+import Database.Persist.Postgresql hiding (get)
 import Database.Persist.TH
 import Data.Aeson (encode)
 import Control.Lens
 import Data.Functor ((<$>))
 import Control.Monad.Reader (asks)
+import Control.Monad.State (get, put)
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy.Char8 as BL
 
 import Notification
-import Config
+
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.State (StateT)
+
+data Config = Config {
+    dbname   :: String
+  , user     :: String
+  , password :: String
+  }
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
   NotificationRecord
+    parent      NotificationRecordId Maybe
     sourceType  String
     eventType   String
     payload     String
@@ -35,6 +46,8 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     duration    Int Maybe
     deriving Show
 |]
+
+type RSY = ReaderT Config (StateT (Maybe NotificationRecordId) IO)
 
 {- connStr = "host=localhost dbname=event_logger user=gust port=5432" -}
 {- connStr = "host=localhost dbname=event_logger user=ababkin password=izmail port=5432" -}
@@ -56,18 +69,28 @@ migrate = do
 
 
 saveNotification :: Notification -> RSY ()
-saveNotification n = do
+saveNotification notification = do
   connStr <- getConnectionString
-  liftIO $ withPostgresqlPool connStr 10 $ \pool -> do
-    flip runSqlPersistMPool pool $ do
-      let notificationRecord = toNotificationRecord n
-      {- liftIO $ putStrLn $ "inserting: " ++ (show notificationRecord) -}
-      notificationId <- insert notificationRecord
-      return ()
+  parentNotificationId <- get
+  notificationRecordId <- liftIO $ insertNotification connStr parentNotificationId notification
+  case notification^.eventType of
+    ControllerProcessStart  -> lift $ put $ Just notificationRecordId
+    ControllerProcessFinish -> lift $ put Nothing
+    _                       -> return ()
 
 
-toNotificationRecord :: Notification -> NotificationRecord
-toNotificationRecord n = NotificationRecord
+  where
+    insertNotification connStr parentNotificationId notification = do
+      withPostgresqlPool connStr 10 $ \pool -> do
+      flip runSqlPersistMPool pool $ do
+        let notificationRecord = toNotificationRecord parentNotificationId notification
+        {- liftIO $ putStrLn $ "inserting: " ++ (show notificationRecord) -}
+        insert notificationRecord
+
+
+toNotificationRecord :: Maybe NotificationRecordId -> Notification -> NotificationRecord
+toNotificationRecord pid n = NotificationRecord
+                          (pid)
                           (T.unpack $ n^.sourceType)
                           (show $ n^.eventType)
                           (BL.unpack $ encode $ n^.payload)
