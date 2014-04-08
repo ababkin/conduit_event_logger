@@ -37,7 +37,7 @@ data Config = Config {
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
   NotificationRecord
-    parent      NotificationRecordId Maybe
+    parentId    NotificationRecordId Maybe
     sourceType  String
     eventType   String
     payload     String
