@@ -41,9 +41,9 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
     sourceType  String
     eventType   String
     payload     String
-    timestamp   String Maybe
-    start       Int Maybe
-    duration    Int Maybe
+    timestamp   String
+    start       Int
+    duration    Int
     deriving Show
 |]
 
@@ -94,7 +94,8 @@ toNotificationRecord pid n = NotificationRecord
                           (T.unpack $ n^.sourceType)
                           (show $ n^.eventType)
                           (BL.unpack $ encode $ n^.payload)
-                          (T.unpack <$> (n^.timestamp))
+                          {- (show $ n^.payload) -}
+                          (T.unpack $ n^.timestamp)
                           (n^.start)
                           (n^.duration)
 

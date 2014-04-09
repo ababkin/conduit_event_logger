@@ -3,12 +3,14 @@
 
 module Notification where
 
+import Data.Functor ((<$>))
 import Control.Applicative
 import Data.Aeson
 import GHC.Generics
 import Control.Lens
 
 import qualified Data.Text as T
+
 
 data EventType = 
     ControllerProcessStart
@@ -30,25 +32,26 @@ data PayloadType =
 
 data Payload = 
   RenderPayload{
-    _identifier :: T.Text
+    _identifier :: String
   }
   |
   SqlPayload{
-    _sql        :: T.Text
+    _sql        :: String
   }
   |
   ControllerPayload{
-    _controller :: T.Text
-  , _action     :: T.Text
-  , _params     :: Object
-  , _format     :: T.Text
-  , _method     :: T.Text
-  , _path       :: T.Text
+    _controller :: String
+  , _action     :: String
+  {- , _params     :: Object -}
+  , _params     :: String
+  , _format     :: String
+  , _method     :: String
+  , _path       :: String
   , _status     :: Maybe Int
   } 
   |
   ParseErrorPayload{
-    _errorMsg   :: T.Text
+    _errorMsg   :: String
   }
   |
   UnknownPayload
@@ -60,9 +63,9 @@ data Notification = Notification{
     _sourceType :: T.Text
   , _eventType  :: EventType
   , _payload    :: Payload
-  , _timestamp  :: Maybe T.Text
-  , _start      :: Maybe Int
-  , _duration   :: Maybe Int
+  , _timestamp  :: T.Text
+  , _start      :: Int
+  , _duration   :: Int
   } deriving (Show)
 
 makeLenses ''Payload
@@ -77,7 +80,7 @@ instance FromJSON Notification where
       SqlPayloadType        -> SqlPayload         <$> payload .: "sql"
       ControllerPayloadType -> ControllerPayload  <$> payload .: "controller"
                                                   <*> payload .: "action"
-                                                  <*> payload .: "params"
+                                                  <*> ((show :: Object -> String) <$> payload .: "params")
                                                   <*> payload .: "format"
                                                   <*> payload .: "method"
                                                   <*> payload .: "path"

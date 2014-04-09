@@ -49,22 +49,22 @@ main = do
           where
             unwrap = awaitForever $ \case
               (Left e) -> do
-                yield $ parseErrorNotification $ T.pack $ show e
+                yield $ parseErrorNotification $ show e
                 {- parseNotification -}
                 
               (Right (_, j)) -> do
                 {- liftIO $ putStrLn $ "\ngot json chunk of size: " ++ (show $ length $ show j) -}
                 yield $ case fromJSON j :: Result Notification of
                   Success notification  -> notification
-                  Error s               -> parseErrorNotification $ T.pack s
+                  Error s               -> parseErrorNotification s
 
             parseErrorNotification s = Notification{
               _sourceType = "internal"
             , _eventType  = ParseError
             , _payload    = ParseErrorPayload s
-            , _timestamp  = Nothing
-            , _start      = Nothing
-            , _duration   = Nothing
+            , _timestamp  = ""
+            , _start      = 0
+            , _duration   = 0
             }
 
         {- handleNotification :: (MonadReader Config m, MonadIO m) => Sink Notification m () -}
