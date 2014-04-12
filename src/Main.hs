@@ -4,13 +4,21 @@
 
 module Main where
 
-import Control.Monad.Trans (lift)
+import Control.Monad.Trans    (lift)
+import Control.Exception.Extensible as E
+import Network.BSD            (getProtocolNumber)
+import Network.Socket         ( Socket, SockAddr(..), SocketOption(..)
+                              , SocketType(Stream), SocketType(Datagram)
+                              , Family(AF_INET) , accept, bindSocket
+                              , iNADDR_ANY, sClose, listen, maxListenQueue
+                              , setSocketOption, socket
+                              )
 import Data.Conduit
 import Data.Conduit.Network.UDP
 import Data.Aeson
 import Control.Monad.IO.Class
-import Control.Monad.Reader (runReaderT)
-import Control.Monad.State (runStateT)
+import Control.Monad.Reader   (runReaderT)
+import Control.Monad.State    (runStateT)
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Conduit.Attoparsec as CA
@@ -23,9 +31,9 @@ udpPort           = 5555
 maxUdpFrameBytes  = 8192
 
 config = Config{
-    dbname = "railoscopy"
-  , user = "ababkin"
-  , password = "izmail"
+    dbname    = "railoscopy"
+  , user      = "ababkin"
+  , password  = "izmail"
   }
 
 main = do
@@ -35,8 +43,8 @@ main = do
       getUdpMessage $$ extractData =$= parseNotification =$ handleNotification
       where
         getUdpMessage = do
-          socket <- liftIO $ bindPort udpPort HostAny
-          sourceSocket socket maxUdpFrameBytes 
+          socket <- liftIO $ listenUDP udpPort
+          sourceSocket socket maxUdpFrameBytes
 
         extractData :: Conduit Message RSY BS.ByteString
         extractData = do
@@ -50,10 +58,8 @@ main = do
             unwrap = awaitForever $ \case
               (Left e) -> do
                 yield $ parseErrorNotification $ show e
-                {- parseNotification -}
                 
               (Right (_, j)) -> do
-                {- liftIO $ putStrLn $ "\ngot json chunk of size: " ++ (show $ length $ show j) -}
                 yield $ case fromJSON j :: Result Notification of
                   Success notification  -> notification
                   Error s               -> parseErrorNotification s
@@ -67,13 +73,23 @@ main = do
             , _duration   = 0
             }
 
-        {- handleNotification :: (MonadReader Config m, MonadIO m) => Sink Notification m () -}
         handleNotification :: Sink Notification RSY ()
         handleNotification = do
           awaitForever $ \notification -> do
-            {- liftIO $ putStr $ show notification -}
             lift $ saveNotification notification
 
 
 
-
+-- taken from https://github.com/joehillen/acme-sip/blob/master/Acme/Serve.hs
+listenUDP :: Int  -- ^ port number
+         -> IO Socket
+listenUDP portm = do
+    proto <- getProtocolNumber "udp"
+    E.bracketOnError
+        (socket AF_INET Datagram proto)
+        sClose
+        (\sock -> do
+            setSocketOption sock ReuseAddr 1
+            bindSocket sock (SockAddrInet (fromIntegral portm) iNADDR_ANY)
+            return sock
+        )

@@ -3,7 +3,6 @@
 
 module Notification where
 
-import Data.Functor ((<$>))
 import Control.Applicative
 import Data.Aeson
 import GHC.Generics
@@ -42,7 +41,6 @@ data Payload =
   ControllerPayload{
     _controller :: String
   , _action     :: String
-  {- , _params     :: Object -}
   , _params     :: String
   , _format     :: String
   , _method     :: String

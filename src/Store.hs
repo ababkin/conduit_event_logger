@@ -49,9 +49,6 @@ share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 
 type RSY = ReaderT Config (StateT (Maybe NotificationRecordId) IO)
 
-{- connStr = "host=localhost dbname=event_logger user=gust port=5432" -}
-{- connStr = "host=localhost dbname=event_logger user=ababkin password=izmail port=5432" -}
-
 getConnectionString :: RSY BS.ByteString
 getConnectionString = do
   db <- asks dbname
@@ -62,7 +59,7 @@ getConnectionString = do
 migrate :: RSY ()
 migrate = do
   connStr <- getConnectionString
-  liftIO $ withPostgresqlPool connStr 10 $ \pool -> do
+  liftIO $ withPostgresqlPool connStr 100 $ \pool -> do
     flip runSqlPersistMPool pool $ do
       runMigration migrateAll
   return ()
@@ -74,18 +71,17 @@ saveNotification notification = do
   parentNotificationId <- get
   notificationRecordId <- liftIO $ insertNotification connStr parentNotificationId notification
   case notification^.eventType of
-    ControllerProcessStart  -> lift $ put $ Just notificationRecordId
+    ControllerProcessStart  -> lift $ put $ Just (notificationRecordId :: KeyBackend (PersistEntityBackend NotificationRecord) NotificationRecord)
     ControllerProcessFinish -> lift $ put Nothing
     _                       -> return ()
 
 
   where
     insertNotification connStr parentNotificationId notification = do
-      withPostgresqlPool connStr 10 $ \pool -> do
-      flip runSqlPersistMPool pool $ do
-        let notificationRecord = toNotificationRecord parentNotificationId notification
-        {- liftIO $ putStrLn $ "inserting: " ++ (show notificationRecord) -}
-        insert notificationRecord
+      withPostgresqlPool connStr 100 $ \pool -> do
+        flip runSqlPersistMPool pool $ do
+          let notificationRecord = toNotificationRecord parentNotificationId notification
+          insert notificationRecord
 
 
 toNotificationRecord :: Maybe NotificationRecordId -> Notification -> NotificationRecord
@@ -94,7 +90,6 @@ toNotificationRecord pid n = NotificationRecord
                           (T.unpack $ n^.sourceType)
                           (show $ n^.eventType)
                           (BL.unpack $ encode $ n^.payload)
-                          {- (show $ n^.payload) -}
                           (T.unpack $ n^.timestamp)
                           (n^.start)
                           (n^.duration)
